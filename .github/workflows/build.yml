@@ -14,7 +14,7 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: true
 
@@ -44,7 +44,7 @@ jobs:
           Compress-Archive -Path package/* -DestinationPath "DLSS-NR-Composite-$ver.zip"
           "ZIP=DLSS-NR-Composite-$ver.zip" >> $env:GITHUB_ENV
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: DLSS-NR-Composite
           path: package/*

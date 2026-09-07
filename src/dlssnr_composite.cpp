@@ -93,7 +93,7 @@ float Calibrate(double v, float scale, float bias = 0.0f)
 }
 
 // ---------------------------------------------------------------- shaders (src/dlssnr_composite.hlsl, embedded)
-struct Constants { uint32_t fullWidth, fullHeight, lowWidth, lowHeight, hasMotion, pad[3]; };
+struct Constants { uint32_t fullWidth, fullHeight, lowWidth, lowHeight, hasMotion, hasDepth, pad[2]; };
 
 struct Gpu
 {
@@ -160,6 +160,11 @@ DXGI_FORMAT ViewFormat(DXGI_FORMAT f)
     case DXGI_FORMAT_R10G10B10A2_TYPELESS: return DXGI_FORMAT_R10G10B10A2_UNORM;
     case DXGI_FORMAT_R16G16_TYPELESS: return DXGI_FORMAT_R16G16_FLOAT;
     case DXGI_FORMAT_R32G32_TYPELESS: return DXGI_FORMAT_R32G32_FLOAT;
+    // depth buffers read as shader resources
+    case DXGI_FORMAT_D32_FLOAT: case DXGI_FORMAT_R32_TYPELESS: return DXGI_FORMAT_R32_FLOAT;
+    case DXGI_FORMAT_D32_FLOAT_S8X24_UINT: case DXGI_FORMAT_R32G8X24_TYPELESS: return DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS;
+    case DXGI_FORMAT_D24_UNORM_S8_UINT: case DXGI_FORMAT_R24G8_TYPELESS: return DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
+    case DXGI_FORMAT_D16_UNORM: case DXGI_FORMAT_R16_TYPELESS: return DXGI_FORMAT_R16_UNORM;
     default: return f;
     }
 }
@@ -326,13 +331,14 @@ NVSDK_NGX_Result EvaluateReduced(Feature& f, ID3D12GraphicsCommandList* cmd, con
     ID3D12Resource* color = GetResource(p, "DLSSNR.Color");
     ID3D12Resource* output = GetResource(p, "DLSSNR.Output");
     ID3D12Resource* motion = GetResource(p, "DLSSNR.MVec");
+    ID3D12Resource* depth = GetResource(p, "DLSSNR.Depth");
     if (!color || !output) return kFail;
     ID3D12Device* device = nullptr;
     cmd->GetDevice(IID_PPV_ARGS(&device));
     if (device) device->Release();
     if (!device || !InitGpu(g.gpu, device) || !PrepareResources(f, device, color, output, motion)) return kFail;
 
-    const Constants c{ f.nativeW, f.nativeH, f.lowW, f.lowH, motion ? 1u : 0u, {} };
+    const Constants c{ f.nativeW, f.nativeH, f.lowW, f.lowH, motion ? 1u : 0u, depth ? 1u : 0u, {} };
     const uint32_t base = (f.ring++ % kRing) * kSetsPerFrame;
     ID3D12DescriptorHeap* heaps[] = { f.heap };
 
@@ -342,7 +348,7 @@ NVSDK_NGX_Result EvaluateReduced(Feature& f, ID3D12GraphicsCommandList* cmd, con
     Transition(cmd, f.lowColor, f.lowColorState, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     Transition(cmd, f.lowMotion, f.lowMotionState, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     Transition(cmd, f.lowDepth, f.lowDepthState, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-    Dispatch(cmd, g.gpu.reduce, c, WriteSet(f, device, base, color, motion ? motion : color, color, f.lowColor), f.lowW, f.lowH);
+    Dispatch(cmd, g.gpu.reduce, c, WriteSet(f, device, base, color, motion ? motion : color, depth ? depth : color, f.lowColor), f.lowW, f.lowH);
     Transition(cmd, f.lowColor, f.lowColorState, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
     Transition(cmd, f.lowMotion, f.lowMotionState, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
     Transition(cmd, f.lowDepth, f.lowDepthState, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);

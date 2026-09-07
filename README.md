@@ -35,5 +35,12 @@ Hooks `NVSDK_NGX_D3D12_CreateFeature` / `EvaluateFeature` / `ReleaseFeature`
 in every NGX module of the process (MinHook). Feature 18 created at native
 size with scaling ratio 1 becomes a half-size real feature. Per evaluation,
 two compute dispatches around the real feature: `Reduce` (one bilinear tap per
-2x2 footprint for colour and motion vectors) and `Compose`
+2x2 footprint for colour, motion vectors and depth) and `Compose`
 (native + bilinear upsample of the reduced delta into the game's output).
+
+Sponza, animation frozen: native DLSS-NR against the composite, and the
+stages (native input, 2x downscale, NR at half resolution, delta, composite).
+
+![pipeline](docs/pipeline.png)
+
+![pipeline, second view](docs/pipeline-2.png)
