@@ -56,8 +56,6 @@ void Log(reshade::log::level level, const char* fmt, ...)
 constexpr NVSDK_NGX_Result kFail = static_cast<NVSDK_NGX_Result>(0xBAD00001);
 constexpr int kNeuralRenderingFeature = 18;
 constexpr uint32_t kMinWidth = 640;
-// Reduced-stream parameter calibration (fitted so the half-resolution result matches the native look).
-constexpr float kIntensityBias = 0.168f;
 
 using PFN_Create = NVSDK_NGX_Result(*)(ID3D12GraphicsCommandList*, int, NVSDK_NGX_Parameter*, NVSDK_NGX_Handle**);
 using PFN_Evaluate = NVSDK_NGX_Result(*)(ID3D12GraphicsCommandList*, const NVSDK_NGX_Handle*, const NVSDK_NGX_Parameter*, void*);
@@ -86,10 +84,6 @@ void CopyNumber(const NVSDK_NGX_Parameter* from, NVSDK_NGX_Parameter* to, const 
     unsigned int ui; if (from->Get(name, &ui) == kNgxSuccess) { to->Set(name, ui); return; }
     int i; if (from->Get(name, &i) == kNgxSuccess) { to->Set(name, i); return; }
     unsigned long long ull; if (from->Get(name, &ull) == kNgxSuccess) { to->Set(name, ull); return; }
-}
-float Calibrate(double v, float scale, float bias = 0.0f)
-{
-    return std::clamp(static_cast<float>(1.0 + (v - 1.0) * scale) - bias, 0.0f, 2.0f);
 }
 
 // ---------------------------------------------------------------- shaders (src/dlssnr_composite.hlsl, embedded)
@@ -421,21 +415,14 @@ NVSDK_NGX_Result HookedCreate(NgxModule& m, ID3D12GraphicsCommandList* cmd, int 
     f->paramOwner = paramOwner;
     NVSDK_NGX_Parameter* q = f->params;
     for (const char* n : { "CreationNodeMask", "VisibilityNodeMask", "DLSSNR.Hint.Render.Preset", "PerfQualityValue",
-        "DLSSNR.UseAutoMask", "DLSSNR.UICorrection", "DLSSNR.Scale", "DLSSNR.Upscaling", "DLSSNR.Style" })
+        "DLSSNR.UseAutoMask", "DLSSNR.UICorrection", "DLSSNR.Scale", "DLSSNR.Upscaling", "DLSSNR.Style",
+        "DLSSNR.Intensity", "DLSSNR.LocalToneStrength", "DLSSNR.LocalStructureStrength", "DLSSNR.GlobalToneStrength",
+        "DLSSNR.SkinStructureStrength" })
         CopyNumber(parameters, q, n);
     void* cb = nullptr;
     if (parameters->Get("DLSSNRComputeScalingRatioCallback", &cb) == kNgxSuccess && cb) q->Set("DLSSNRComputeScalingRatioCallback", cb);
     for (const char* n : { "Width", "DLSSNR.Width", "DLSSNR.InputWidth", "DLSSNR.OutputWidth", "DLSSNR.Output.Width", "OutWidth" }) q->Set(n, f->lowW);
     for (const char* n : { "Height", "DLSSNR.Height", "DLSSNR.InputHeight", "DLSSNR.OutputHeight", "DLSSNR.Output.Height", "OutHeight" }) q->Set(n, f->lowH);
-    double intensity = 1, tone = 1, structure = 1, global = 1, skin = -1;
-    GetNumber(parameters, "DLSSNR.Intensity", intensity); GetNumber(parameters, "DLSSNR.LocalToneStrength", tone);
-    GetNumber(parameters, "DLSSNR.LocalStructureStrength", structure); GetNumber(parameters, "DLSSNR.GlobalToneStrength", global);
-    GetNumber(parameters, "DLSSNR.SkinStructureStrength", skin);
-    q->Set("DLSSNR.Intensity", Calibrate(intensity, 0.56f, kIntensityBias));
-    q->Set("DLSSNR.LocalToneStrength", Calibrate(tone, 0.582f));
-    q->Set("DLSSNR.LocalStructureStrength", Calibrate(structure, 0.479f));
-    q->Set("DLSSNR.GlobalToneStrength", Calibrate(global, 0.40f));
-    q->Set("DLSSNR.SkinStructureStrength", float(std::clamp(skin, -1.0, 2.0)));
     q->Set("DLSSNR.ScalingRatio", 0.5f);
     q->Set("DLSSNR.Enabled", 1);
     const NVSDK_NGX_Result result = m.createOriginal(cmd, feature, q, &f->real);
